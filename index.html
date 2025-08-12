@@ -101,13 +101,7 @@
     socket.on("lock_typing", () => {
         isLocked = true;
         console.log("Typing is now locked for all users.");
-
-        // 🔔 اعلام پایان تایپ برای محاسبه
         socket.emit("finish");
-    });
-
-    socket.on("refresh_page", () => {
-        location.reload(); // کل صفحه رو رفرش می‌کنه
     });
 
     socket.on("you_are_host", (data) => {
