@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Typing Race</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            margin: 2rem;
+        }
+
+        h1 {
+            margin-bottom: 1rem;
+        }
+
+        #text {
+            font-size: 1.35rem;
+            line-height: 1.8rem;
+        }
+
+        #text span {
+            display: inline-block;
+            white-space: pre;
+            min-width: 0.6ch;
+            padding: 0 1px;
+            border-radius: 3px;
+            transition: background-color 0.15s;
+        }
+
+        #text span.correct {
+            color: green;
+            background-color: rgba(0, 255, 0, 0.25);
+        }
+
+        #text span.wrong {
+            color: red;
+            background-color: rgba(255, 0, 0, 0.25);
+        }
+
+        button {
+            margin-top: 1.5rem;
+            padding: 0.4rem 0.9rem;
+            border: 1px solid #444;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        #leaderboard {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 2rem;
+        }
+
+        #leaderboard th, #leaderboard td {
+            border: 1px solid #ccc;
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        #leaderboard th {
+            background-color: #f0f0f0;
+        }
+
+        #leaderboard td {
+            font-size: 0.95rem;
+        }
+
+    </style>
+</head>
+<body>
+<h1>Typing Race 🏎️</h1>
+<div id="text"></div>
+<button id="restart">New Round</button>
+<h2>Leaderboard 🏆</h2>
+<table id="leaderboard">
+    <thead>
+    <tr>
+        <th>Round</th>
+        <th>Preview</th>
+        <th>Winner Score</th>
+        <th>🏅</th>
+    </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<script>
+    const socket = io("http://localhost:5050", {
+        query: {
+            user_id: getOrCreateUserId()
+        }
+    });
+
+    let target = "";
+    let idx = 0;
+    let isLocked = false;
+
+    socket.on("text", newText => startRound(newText));
+
+    socket.on("lock_typing", () => {
+        isLocked = true;
+        console.log("Typing is now locked for all users.");
+
+        // 🔔 اعلام پایان تایپ برای محاسبه
+        socket.emit("finish");
+    });
+
+    socket.on("refresh_page", () => {
+        location.reload(); // کل صفحه رو رفرش می‌کنه
+    });
+
+    socket.on("you_are_host", (data) => {
+    if (data.is_host) {
+        document.getElementById("restart").style.display = "block";
+    } else {
+        document.getElementById("restart").style.display = "none";
+    }
+});
+
+
+
+    document.getElementById("restart").onclick = () => {
+        socket.emit("restart");
+    };
+
+    document.addEventListener("keydown", e => {
+        if (isLocked) return;
+
+        if (!target || idx >= target.length) return;
+
+        if (e.key.length !== 1 && e.key !== "Enter" && e.key !== " ") return;
+
+        let typed = e.key;
+        if (typed === "Enter") typed = "\n";
+
+        const expected = target[idx];
+        const span = document.getElementById(`c-${idx}`);
+
+        socket.emit("typed_char", {
+            char: typed,
+            index: idx,
+        });
+
+        if (typed === expected) {
+            span.classList.add("correct");
+        } else {
+            span.classList.add("wrong");
+        }
+
+        idx += 1;
+
+        if (idx >= target.length) {
+            socket.emit("finished_typing");
+        }
+    });
+
+    function startRound(text) {
+        target = text;
+        idx = 0;
+        isLocked = false;
+        renderTarget(text);
+    }
+
+    function renderTarget(text) {
+        const container = document.getElementById("text");
+        container.innerHTML = "";
+        [...text].forEach((ch, i) => {
+            const s = document.createElement("span");
+            s.id = `c-${i}`;
+            s.textContent = ch;
+            container.appendChild(s);
+        });
+    }
+
+    function getOrCreateUserId() {
+        let userId = localStorage.getItem("user_id");
+        if (!userId) {
+            userId = crypto.randomUUID();
+            localStorage.setItem("user_id", userId);
+        }
+        return userId;
+    }
+
+    const leaderboard = [];
+
+    socket.on("rounds", data => {
+        // ذخیره حداکثر 10 راند آخر
+        leaderboard.unshift(data);
+        if (leaderboard.length > 10) leaderboard.pop();
+
+        updateLeaderboard();
+    });
+
+    function updateLeaderboard() {
+        const tbody = document.querySelector("#leaderboard tbody");
+        tbody.innerHTML = "";
+
+        leaderboard.forEach(round => {
+            const tr = document.createElement("tr");
+
+            // ستون شماره راند
+            const tdRound = document.createElement("td");
+            tdRound.textContent = round.round_count;
+            tr.appendChild(tdRound);
+
+            // ستون پیش‌نمایش متن (فقط چند کلمه)
+            const tdPreview = document.createElement("td");
+            tdPreview.textContent = round.text.split(" ").slice(0, 5).join(" ") + "...";
+            tr.appendChild(tdPreview);
+
+            // ستون امتیاز برنده
+            const tdScore = document.createElement("td");
+            tdScore.textContent = round.winner_score;
+            tr.appendChild(tdScore);
+
+            // ستون ایموجی 🏆 یا 🏳️
+            const tdResult = document.createElement("td");
+            const isWinner = round.winner === getOrCreateUserId();
+            tdResult.textContent = isWinner ? "🏆" : "🏳️";
+            tr.appendChild(tdResult);
+
+            tbody.appendChild(tr);
+        });
+    }
+
+</script>
+</body>
+</html>
+
+
+
